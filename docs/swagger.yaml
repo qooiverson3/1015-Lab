@@ -1,0 +1,160 @@
+definitions:
+  domain.RequestBodyViaSequence:
+    properties:
+      endSeq:
+        example: 12000
+        type: integer
+      phase:
+        example: 0
+        type: integer
+      startSeq:
+        example: 10000
+        type: integer
+      stream:
+        example: TestStream
+        type: string
+    required:
+    - phase
+    - startSeq
+    - stream
+    type: object
+  domain.RequestBodyViaTimeStamp:
+    properties:
+      endT:
+        example: 1664520600
+        type: integer
+      phase:
+        example: 0
+        type: integer
+      starT:
+        example: 1664520600
+        type: integer
+      stream:
+        example: TestStream
+        type: string
+    required:
+    - phase
+    - starT
+    - stream
+    type: object
+  domain.ResponseOfPostRestoreSuccess:
+    properties:
+      message:
+        type: string
+      status:
+        type: boolean
+    type: object
+  domain.ResponseOfRestoreForbidden:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/domain.Restore'
+        type: array
+      status:
+        type: boolean
+    type: object
+  domain.Restore:
+    properties:
+      createdAt:
+        type: string
+      have:
+        type: integer
+      id:
+        type: string
+      message:
+        type: string
+      restoreBy:
+        type: string
+      status:
+        type: string
+      stream:
+        type: string
+      updateAt:
+        type: string
+      want:
+        type: integer
+    type: object
+info:
+  contact:
+    name: DAPD WSLAID
+  description: NATS system loader API
+  title: NATS-LOADER API
+  version: "1.0"
+paths:
+  /restore:
+    get:
+      operationId: "1"
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/domain.ResponseOfPostRestoreSuccess'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/domain.ResponseOfRestoreForbidden'
+      security:
+      - ApiKeyAuth: []
+      summary: get restore logs
+      tags:
+      - Restore
+  /restore/sequence:
+    post:
+      operationId: "2"
+      parameters:
+      - description: param
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/domain.RequestBodyViaSequence'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/domain.ResponseOfPostRestoreSuccess'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/domain.ResponseOfRestoreForbidden'
+      security:
+      - ApiKeyAuth: []
+      summary: restore stream by sequence
+      tags:
+      - Restore
+  /restore/timestamp:
+    post:
+      operationId: "3"
+      parameters:
+      - description: param
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/domain.RequestBodyViaTimeStamp'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/domain.ResponseOfPostRestoreSuccess'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/domain.ResponseOfRestoreForbidden'
+      security:
+      - ApiKeyAuth: []
+      summary: restore stream by timestamp
+      tags:
+      - Restore
+securityDefinitions:
+  ApiKeyAuth:
+    in: header
+    name: token
+    type: apiKey
+swagger: "2.0"
