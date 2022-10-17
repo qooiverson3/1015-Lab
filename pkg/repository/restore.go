@@ -215,3 +215,13 @@ func (r *LoaderRepo) DropCollection() error {
 	col := r.MongoCtx.MgoCollection
 	return col.Drop(context.TODO())
 }
+
+func (r *LoaderRepo) InsertMany(stream string, data []interface{}) bool {
+	col := r.MongoCtx.Client.Database("nats").Collection(stream)
+	_, err := col.InsertMany(context.TODO(), data)
+	if err != nil {
+		log.Printf("[ERR] backup fail,%v", err)
+		return false
+	}
+	return true
+}

@@ -47,6 +47,7 @@ type Repository interface {
 	IsRestoreInProgress(stream string) bool
 	CloneCollection(stream string) bool
 	DropCollection() error
+	InsertMany(stream string, data []interface{}) bool
 }
 
 type Service interface {

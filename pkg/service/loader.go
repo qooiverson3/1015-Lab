@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"loader/pkg/domain"
 	"log"
 	"time"
@@ -32,6 +33,8 @@ func (s LoaderService) Loader(stream string, ctx context.Context) {
 		log.Fatalf("[ERR] get stream info err:%v, stream:%v", err, stream)
 	}
 
+	js.DeleteConsumer(s.StreamName, fmt.Sprintf("%v-loader", s.StreamName))
+
 	// get last sequence from mongodb
 	mgoLastEvent, err := s.Repo.GetLastSeqIDFromDB(stream)
 	if err != nil {
@@ -40,19 +43,49 @@ func (s LoaderService) Loader(stream string, ctx context.Context) {
 
 	log.Printf("[INF] Loader is runner.. (stream:%v startSequence:%v)\n", stream, mgoLastEvent.StreamSeq+1)
 
-	chMsgs := make(chan *nats.Msg, 4096)
+	//chMsgs := make(chan *nats.Msg, 4096)
 
 	// subscribe
-	sub, err := js.Subscribe(">", func(msg *nats.Msg) {
-		chMsgs <- msg
-	}, nats.BindStream(stream), nats.StartSequence(mgoLastEvent.StreamSeq+1)) // need to bind stream
+	sub, err := js.PullSubscribe(">", fmt.Sprintf("%v-loader", s.StreamName), nats.BindStream(stream), nats.StartSequence(mgoLastEvent.StreamSeq+1), nats.MaxAckPending(1000))
+	//chMsgs <- msg
+	//}, nats.BindStream(stream), nats.StartSequence(mgoLastEvent.StreamSeq+1)) // need to bind stream
 
 	if err != nil {
 		log.Fatalf("[ERR] %v (stream:%v)", err, stream)
 	}
 
+	go func() {
+		for {
+			msgs, _ := sub.Fetch(200)
+			results := make([]interface{}, 200)
+
+			for i := 0; i < len(msgs); i++ {
+				meta, _ := msgs[i].Metadata()
+				results[i] = domain.MessageInMgo{
+					Message:    msgs[i],
+					StreamSeq:  meta.Sequence.Stream,
+					ReceivedAt: meta.Timestamp,
+				}
+				// err := s.Repo.SaveToDB(&bson.D{
+				// 	{Key: "message", Value: msg},
+				// 	{Key: "streamSequence", Value: meta.Sequence.Stream},
+				// 	{Key: "receviedAt", Value: meta.Timestamp},
+				// }, "nats", s.StreamName)
+				// if err != nil {
+				// 	log.Fatal("[ERR] save to db err:", err)
+				// }
+				log.Printf("[INF] got seq:%v\n", meta.Sequence.Stream)
+				msgs[i].Ack()
+			}
+
+			s.Repo.InsertMany(s.StreamName, results)
+			time.Sleep(time.Second)
+			// fmt.Println("consume 100 messages done")
+			// time.Sleep(30 * time.Second)
+		}
+	}()
 	// store
-	go s.Store(chMsgs, "nats", s.StreamName)
+	//go s.Store(chMsgs, "nats", s.StreamName)
 
 	// check seq state
 	go s.checkStreamSequenceState(ctx, js, sub, strInfo, mgoLastEvent.MgoSeq)
