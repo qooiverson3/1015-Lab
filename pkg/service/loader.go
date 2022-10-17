@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
-	"go.mongodb.org/mongo-driver/bson"
 )
 
 type LoaderService struct {
@@ -43,13 +42,8 @@ func (s LoaderService) Loader(stream string, ctx context.Context) {
 
 	log.Printf("[INF] Loader is runner.. (stream:%v startSequence:%v)\n", stream, mgoLastEvent.StreamSeq+1)
 
-	//chMsgs := make(chan *nats.Msg, 4096)
-
 	// subscribe
 	sub, err := js.PullSubscribe(">", fmt.Sprintf("%v-loader", s.StreamName), nats.BindStream(stream), nats.StartSequence(mgoLastEvent.StreamSeq+1), nats.MaxAckPending(1000))
-	//chMsgs <- msg
-	//}, nats.BindStream(stream), nats.StartSequence(mgoLastEvent.StreamSeq+1)) // need to bind stream
-
 	if err != nil {
 		log.Fatalf("[ERR] %v (stream:%v)", err, stream)
 	}
@@ -59,57 +53,25 @@ func (s LoaderService) Loader(stream string, ctx context.Context) {
 			msgs, _ := sub.Fetch(200)
 			results := make([]interface{}, 200)
 
-			for i := 0; i < len(msgs); i++ {
-				meta, _ := msgs[i].Metadata()
-				results[i] = domain.MessageInMgo{
-					Message:    msgs[i],
-					StreamSeq:  meta.Sequence.Stream,
-					ReceivedAt: meta.Timestamp,
+			if len(msgs) != 0 {
+				for i := 0; i < len(msgs); i++ {
+					meta, _ := msgs[i].Metadata()
+					results[i] = domain.MessageInMgo{
+						Message:    msgs[i],
+						StreamSeq:  meta.Sequence.Stream,
+						ReceivedAt: meta.Timestamp,
+					}
+					log.Printf("[INF] got seq:%v\n", meta.Sequence.Stream)
+					msgs[i].Ack()
 				}
-				// err := s.Repo.SaveToDB(&bson.D{
-				// 	{Key: "message", Value: msg},
-				// 	{Key: "streamSequence", Value: meta.Sequence.Stream},
-				// 	{Key: "receviedAt", Value: meta.Timestamp},
-				// }, "nats", s.StreamName)
-				// if err != nil {
-				// 	log.Fatal("[ERR] save to db err:", err)
-				// }
-				log.Printf("[INF] got seq:%v\n", meta.Sequence.Stream)
-				msgs[i].Ack()
+				s.Repo.InsertMany(s.StreamName, results)
 			}
-
-			s.Repo.InsertMany(s.StreamName, results)
 			time.Sleep(time.Second)
-			// fmt.Println("consume 100 messages done")
-			// time.Sleep(30 * time.Second)
 		}
 	}()
-	// store
-	//go s.Store(chMsgs, "nats", s.StreamName)
 
 	// check seq state
 	go s.checkStreamSequenceState(ctx, js, sub, strInfo, mgoLastEvent.MgoSeq)
-}
-
-func (s LoaderService) Store(chMsgs chan *nats.Msg, db, coll string) {
-	for {
-		select {
-		case msg := <-chMsgs:
-			meta, _ := msg.Metadata()
-			err := s.Repo.SaveToDB(&bson.D{
-				{Key: "message", Value: msg},
-				{Key: "streamSequence", Value: meta.Sequence.Stream},
-				{Key: "receviedAt", Value: meta.Timestamp},
-			}, db, coll)
-			if err != nil {
-				log.Fatal("[ERR] save to db err:", err)
-			}
-			log.Printf("[INF] got seq:%v\n", meta.Sequence.Stream)
-			msg.Ack()
-		default:
-			time.Sleep(time.Second)
-		}
-	}
 }
 
 func (s LoaderService) checkStreamSequenceState(ctx context.Context, js nats.JetStreamContext, sub *nats.Subscription, strInfo *nats.StreamInfo, mgoLastSeq uint64) {
